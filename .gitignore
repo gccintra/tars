@@ -4,6 +4,8 @@ env/
 .env
 data/*
 
+temp_audio/
+
 __pycache__/
 *.pyc
 *.pyo
