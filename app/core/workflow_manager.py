@@ -55,7 +55,6 @@ class WorkflowManager():
         if not prompt_model:
             raise ValueError("Template de prompt de criação não encontrado nas configurações.")
 
-        # Montagem do prompt final
         final_prompt = prompt_model.format(
             user_request=prompt_request, 
             project_context=project_context, 
@@ -77,7 +76,6 @@ class WorkflowManager():
 
         print(f"IA gerou {len(hus_data)} HUs. Salvando no banco de dados...")
 
-        # Itera sobre a lista de HUs retornada pela IA
         for hu_data in hus_data:
             new_hu = self.db_service.create_user_story(
                 epic_id=epic.id,
@@ -85,15 +83,18 @@ class WorkflowManager():
                 status='draft' # Começa como rascunho
             )
 
-            initial_chat_log = [
-                {"role": "user", "content": f"{final_prompt}"},
-                {"role": "assistant", "content": f"HU gerada pela IA: {json.dumps(hu_data, indent=2)}"}
-            ]
-
-            self.db_service.create_chat_history(
+            self.db_service.add_chat_message(
                 user_story_id=new_hu.id,
-                log=json.dumps(initial_chat_log) # Salva o log como uma string JSON
+                role='user',
+                content=final_prompt
             )
+
+            self.db_service.add_chat_message(
+                user_story_id=new_hu.id,
+                role='ai',
+                content=response_str
+            )
+
             print(f"HU '{new_hu.name}' e seu histórico de chat foram criados.")
         
         print("Processo de criação de HUs concluído.")

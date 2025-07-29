@@ -3,7 +3,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 # Importe seus modelos como antes
-from app.database.models import Base, Project, Epic, UserStory, ChatHistory, Setting, IndexedFile
+from app.database.models import Base, ChatMessage, Project, Epic, UserStory, ChatHistory, Setting, IndexedFile
 
 class DatabaseService:
     def __init__(self, db_path: str):
@@ -114,19 +114,33 @@ class DatabaseService:
 
     # --- Métodos para Histórico de Chat ---
 
-    def create_chat_history(self, user_story_id: int, log: str) -> ChatHistory:
+    def add_chat_message(self, user_story_id: int, role: str, content: str) -> ChatMessage:
         session = self._SessionLocal()
         try:
-            new_chat = ChatHistory(user_story_id=user_story_id, log=log)
-            session.add(new_chat)
+            new_message = ChatMessage(
+                user_story_id=user_story_id,
+                role=role,
+                content=content
+            )
+            session.add(new_message)
             session.commit()
-            session.refresh(new_chat)
-            return new_chat
+            session.refresh(new_message)
+            return new_message
         except Exception:
             session.rollback()
             raise
         finally:
             session.close()
+
+    def get_chat_history_for_story(self, user_story_id: int) -> list[ChatMessage]:
+        session = self._SessionLocal()
+        try:
+            stmt = select(ChatMessage).where(ChatMessage.user_story_id == user_story_id).order_by(ChatMessage.timestamp)
+            messages = session.execute(stmt).scalars().all()
+            return list(messages)
+        finally:
+            session.close()
+
 
     # --- Métodos para Configurações (Settings) ---
 
