@@ -20,7 +20,11 @@ pyaudio
 
 # --- IA e Utilitários ---
 openai
+google-genai
 python-dotenv
+google-generativeai
+google-auth
+googleapis-common-protos
 
 # Para criar/manipular arquivos .docx no futuro
 python-docx
