@@ -1,4 +1,3 @@
-# seed_prompts.py
 from app.services.database_service import DatabaseService
 
 # --- DEFINIÇÃO DOS PROMPTS ---
@@ -147,7 +146,9 @@ def seed_database_prompts():
     prompts_to_save = {
         "CREATION_PROMPT_TEMPLATE": CREATION_PROMPT,
         "BETTER_CONTEXT_SEARCH_PROMPT": SEARCH_PROMPT,
-        "AI_PROVIDER_PREFERENCE": "gemini"
+        "AI_PROVIDER_PREFERENCE": "gemini",
+        "OPENAI_API_KEY": {},
+        "GOOGLE_API_KEY": {}
     }
 
     for key, value in prompts_to_save.items():

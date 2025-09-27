@@ -1,5 +1,7 @@
+# app/services/vector_db_service.py
+
 import os
-from langchain_community.document_loaders import DirectoryLoader, TextLoader, PyPDFLoader, Docx2txtLoader
+from langchain_community.document_loaders import TextLoader, PyPDFLoader, Docx2txtLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
@@ -7,100 +9,131 @@ from app.database.models import Project
 from app.services.database_service import DatabaseService
 
 class VectorDBService:
-    def __init__(self, openai_api_key: str):
-        if not openai_api_key:
-            raise ValueError("A chave da API da OpenAI é necessária para o serviço de embeddings.")
-        self.embedding_function = OpenAIEmbeddings(openai_api_key=openai_api_key)
+    def __init__(self, openai_api_key: str | None = None):
+        print("[DEBUG] VectorDBService inicializado.")
+        self.openai_api_key = openai_api_key
+        self.embedding_function = None
+
+    def _get_embedding_function(self) -> OpenAIEmbeddings:
+        if self.embedding_function:
+            return self.embedding_function
+
+        if not self.openai_api_key:
+            raise ValueError("A chave da API da OpenAI não foi configurada. Por favor, adicione-a nas Configurações.")
+
+        print("[DEBUG] Criando instância da função de embedding da OpenAI...")
+        self.embedding_function = OpenAIEmbeddings(openai_api_key=self.openai_api_key)
+        return self.embedding_function
 
     def _get_project_chromadb_path(self, project: Project) -> str:
         if not os.path.isdir(project.db_folder_path):
-            os.makedirs(project.db_folder_path, exist_ok=True)
-             
+             os.makedirs(project.db_folder_path, exist_ok=True)
         return os.path.join(project.db_folder_path, "chroma_db")
     
+    def _load_vector_store(self, project: Project) -> Chroma | None:
+        embedding_func = self._get_embedding_function()
+
+        db_path = self._get_project_chromadb_path(project)
+        if not os.path.exists(db_path):
+            print(f"AVISO: Banco de dados vetorial não encontrado para '{project.name}'.")
+            return None
+        return Chroma(
+            persist_directory=db_path,
+            embedding_function=embedding_func
+        )
 
     def index_project_context(self, project: Project, db_service: DatabaseService):
-        print(f"Iniciando indexação inteligente para o projeto: '{project.name}'")
+        embedding_func = self._get_embedding_function()
+
+        print(f"Iniciando sincronização para o projeto: '{project.name}'")
         context_path = project.context_folder_path
         
+        vector_store = self._load_vector_store(project)
+
         all_current_files = {}
-        for root, _, files in os.walk(context_path):
-            for file in files:
-                file_path = os.path.join(root, file)
-                all_current_files[file_path] = os.path.getmtime(file_path)
+        if os.path.isdir(context_path):
+            for root, _, files in os.walk(context_path):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    all_current_files[file_path] = os.path.getmtime(file_path)
 
-        indexed_files_map = {f.file_path: f.last_modified for f in db_service.get_indexed_files_for_project(project.id)}
 
+        indexed_files = db_service.get_indexed_files_for_project(project.id)
+        indexed_files_map = {f.file_path: f for f in indexed_files}
+        
+
+        files_to_remove = [f for f in indexed_files if f.file_path not in all_current_files]
+        if files_to_remove:
+            print(f"Encontrados {len(files_to_remove)} arquivo(s) para remover da indexação.")
+            if vector_store:
+                ids_to_delete = []
+                for file_to_remove in files_to_remove:
+                    results = vector_store.get(where={"source": file_to_remove.file_path})
+                    ids_to_delete.extend(results['ids'])
+                
+                if ids_to_delete:
+                    print(f"Removendo {len(ids_to_delete)} chunks do ChromaDB...")
+                    vector_store.delete(ids=ids_to_delete)
+            
+            db_service.delete_indexed_files([f.id for f in files_to_remove])
+        
         files_to_index_paths = []
         for path, mod_time in all_current_files.items():
-            if path not in indexed_files_map or indexed_files_map[path] < mod_time:
+            if path not in indexed_files_map or indexed_files_map[path].last_modified < mod_time:
                 files_to_index_paths.append(path)
 
         if not files_to_index_paths:
-            print("Nenhum arquivo novo ou modificado para indexar. Base de conhecimento está atualizada.")
+            print("Nenhum arquivo novo ou modificado para indexar.")
+            print("Sincronização concluída.")
             return
 
-        print(f"Encontrados {len(files_to_index_paths)} arquivo(s) novo(s) ou modificado(s) para indexar.")
-
+        print(f"Encontrados {len(files_to_index_paths)} arquivo(s) novo(s) ou modificado(s) para processar.")
+        
+        if vector_store:
+            ids_to_delete_for_update = []
+            for path in files_to_index_paths:
+                if path in indexed_files_map: 
+                    results = vector_store.get(where={"source": path})
+                    ids_to_delete_for_update.extend(results['ids'])
+            
+            if ids_to_delete_for_update:
+                print(f"Removendo {len(ids_to_delete_for_update)} chunks desatualizados antes de atualizar...")
+                vector_store.delete(ids=ids_to_delete_for_update)
+        
         docs_to_index = []
         for path in files_to_index_paths:
             try:
-                if path.endswith(".txt"):
-                    loader = TextLoader(path, encoding='utf-8')
-                    docs_to_index.extend(loader.load())
-                elif path.endswith(".pdf"):
-                    loader = PyPDFLoader(path)
-                    docs_to_index.extend(loader.load())
-                elif path.endswith(".docx"):
-                    loader = Docx2txtLoader(path)
-                    docs_to_index.extend(loader.load())
+                if path.endswith(".txt"): loader = TextLoader(path, encoding='utf-8')
+                elif path.endswith(".pdf"): loader = PyPDFLoader(path)
+                elif path.endswith(".docx"): loader = Docx2txtLoader(path)
+                else: continue
+                docs_to_index.extend(loader.load())
             except Exception as e:
                 print(f"Erro ao carregar o arquivo {path}: {e}")
 
         if not docs_to_index:
-            print("Nenhum documento compatível encontrado.")
+            print("Nenhum documento compatível foi carregado.")
             return
-        
-        print(f"{len(docs_to_index)} documento(s) carregado(s). Dividindo em chunks...")
-
+            
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=200)
         chunks = text_splitter.split_documents(docs_to_index)
         
-        print(f"Documentos divididos em {len(chunks)} chunks. Adicionando ao banco de dados vetorial...")
-
-        db_path = self._get_project_chromadb_path(project)
-        vector_store = Chroma(
-            persist_directory=db_path,
-            embedding_function=self.embedding_function
-        )
-        vector_store.add_documents(chunks) 
-
+        print(f"Adicionando {len(chunks)} novos chunks ao ChromaDB...")
+        if vector_store is None:
+             db_path = self._get_project_chromadb_path(project)
+             vector_store = Chroma.from_documents(chunks, embedding_func, persist_directory=db_path)
+        else:
+             vector_store.add_documents(chunks)
+        
         for path in files_to_index_paths:
             mod_time = all_current_files[path]
             db_service.update_or_create_indexed_file(project.id, path, mod_time)
 
-        print(f"Indexação incremental concluída com sucesso!")
-
-
+        print("Sincronização incremental concluída com sucesso!")
+ 
     def get_retriever(self, project: Project, search_k: int = 5):
-        """
-        Carrega o banco de dados vetorial de um projeto e retorna um objeto "retriever".
-        O retriever é um componente do LangChain pronto para ser usado em cadeias (chains) de IA.
-
-        :param project: O objeto do projeto ativo.
-        :param search_k: O número de documentos relevantes a serem retornados na busca.
-        """
-        db_path = self._get_project_chromadb_path(project)
-
-        if not os.path.exists(db_path):
-            print(f"AVISO: Nenhum banco de dados vetorial encontrado para o projeto '{project.name}'. Execute a indexação primeiro.")
+        vector_store = self._load_vector_store(project)
+        if vector_store is None:
             return None
-
-        vector_store = Chroma(
-            persist_directory=db_path,
-            embedding_function=self.embedding_function
-        )
-
-        retriever = vector_store.as_retriever(search_kwargs={"k": search_k})
-        print(f"Retriever para o projeto '{project.name}' carregado com sucesso.")
-        return retriever
+            
+        return vector_store.as_retriever(search_kwargs={"k": search_k})

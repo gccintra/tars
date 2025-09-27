@@ -8,7 +8,6 @@ class AudioService:
     # A gravação roda em uma thread separada para não bloquear a UI
    
     def __init__(self, output_folder: str = "temp_audio"):
-        print("criando audio service")
         self.chunk = 1024
         self.format = pyaudio.paInt16
         self.channels = 1

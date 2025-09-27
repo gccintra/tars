@@ -1,9 +1,9 @@
 import os
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, delete, select
 from sqlalchemy.orm import sessionmaker
 
 # Importe seus modelos como antes
-from app.database.models import Base, ChatMessage, Project, Epic, UserStory, ChatHistory, Setting, IndexedFile
+from app.database.models import Base, ChatMessage, Project, Epic, UserStory, Setting, IndexedFile
 
 class DatabaseService:
     def __init__(self, db_path: str):
@@ -12,7 +12,6 @@ class DatabaseService:
             
         self.engine = create_engine(f'sqlite:///{db_path}')
         Base.metadata.create_all(self.engine)
-        # O SessionLocal é a "fábrica" de sessões
         self._SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
 
     # --- Métodos para Projetos ---
@@ -56,6 +55,18 @@ class DatabaseService:
     def get_project_context(self, project_id: int) -> str:
         project = self.get_project_by_id(project_id)
         return project.context if project else ""
+    
+
+    def get_all_projects(self) -> list[Project]:
+        session = self._SessionLocal()
+        try:
+            stmt = select(Project).order_by(Project.name)
+            
+            result = session.execute(stmt)
+            
+            return list(result.scalars().all())
+        finally:
+            session.close()
     
     # --- Métodos para Épicos ---
 
@@ -153,7 +164,7 @@ class DatabaseService:
         finally:
             session.close()
 
-    def save_setting(self, key: str, value: str):
+    def set_setting(self, key: str, value: str):
         session = self._SessionLocal()
         try:
             stmt = select(Setting).where(Setting.key == key)
@@ -197,6 +208,31 @@ class DatabaseService:
                 new_file = IndexedFile(project_id=project_id, file_path=file_path, last_modified=mod_time)
                 session.add(new_file)
             session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+
+    def delete_indexed_files(self, file_ids: list[int]):
+        """
+        Apaga registros de arquivos indexados do banco de dados com base 
+        em uma lista de IDs, seguindo o padrão de sessão explícita.
+        """
+        if not file_ids:
+            return
+
+        session = self._SessionLocal()
+        try:
+            # Cria a declaração para deletar os arquivos onde o ID 
+            # está contido na lista fornecida.
+            stmt = delete(IndexedFile).where(IndexedFile.id.in_(file_ids))
+            
+            session.execute(stmt)
+            session.commit()
+            
+            print(f"{len(file_ids)} registro(s) de arquivos indexados foram removidos.")
         except Exception:
             session.rollback()
             raise

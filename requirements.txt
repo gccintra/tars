@@ -1,8 +1,5 @@
-
-# ORM para o banco de dados relacional
 sqlalchemy
 
-# --- LangChain e Ecossistema ---
 langchain
 langchain-community
 langchain-openai
@@ -11,14 +8,11 @@ langchain-chroma
 
 chromadb
 
-# --- Carregadores de Documentos ---
 pypdf
 docx2txt
 
-# Gravação de Áudio
 pyaudio
 
-# --- IA e Utilitários ---
 openai
 google-genai
 python-dotenv
@@ -26,8 +20,6 @@ google-generativeai
 google-auth
 googleapis-common-protos
 
-# Para criar/manipular arquivos .docx no futuro
 python-docx
 
-# Para a Interface Gráfica
-customtkinter
+flet

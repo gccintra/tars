@@ -16,6 +16,8 @@ class Project(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     context: Mapped[str | None] = mapped_column(Text)
+
+    # TODO: Pensar sobre esses 3 campos aqui, manter os dados salvos na pasta do sistema mesmo. (os arquivos de output vao direto para a conta do google docs do usuario) 
     context_folder_path: Mapped[str | None] = mapped_column(String(255))
     output_folder_path: Mapped[str | None] = mapped_column(String(255))
     db_folder_path: Mapped[str | None] = mapped_column(String(255))
@@ -29,6 +31,7 @@ class IndexedFile(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     file_path: Mapped[str] = mapped_column(String(255), nullable=False)
     last_modified: Mapped[float] = mapped_column(nullable=False)
+    
     project_id: Mapped[int] = mapped_column(ForeignKey('projects.id'), nullable=False)
 
 class Epic(Base):
@@ -76,7 +79,7 @@ class ChatMessage(Base):
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     
     user_story_id: Mapped[int] = mapped_column(ForeignKey('user_stories.id'), nullable=False)
-    user_story: Mapped["UserStory"] = relationship(back_populates="chat_history")
+    user_story: Mapped["UserStory"] = relationship(back_populates="chat_messages")
 
 class Setting(Base):
     __tablename__ = 'settings'

@@ -1,4 +1,5 @@
 
+import os
 from app.services.database_service import DatabaseService
 from app.database.models import Project, Epic
 
@@ -8,7 +9,15 @@ class ProjectManager:
         self.active_project: Project | None = None
         self.active_epic: Epic | None = None
 
-    def create_project(self, name: str, context: str, context_path: str, output_path: str, db_path: str) -> Project:
+    def create_project(self, name: str, context: str) -> Project:
+
+        db_folder_name = name.replace(" ", "_")
+
+
+        db_path = f"data/{db_folder_name}/chroma_db"
+        output_path = f"data/{db_folder_name}/output"
+        context_path = f"data/{db_folder_name}/context"
+
         new_project = self.db_service.create_project(
             name=name,
             context=context,
@@ -16,6 +25,14 @@ class ProjectManager:
             output_path=output_path,
             db_path=db_path
         )
+
+        if new_project:
+            print(f"Projeto '{new_project.name}' criado com sucesso.")
+        
+            os.makedirs(os.path.dirname(db_path), exist_ok=True)
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            os.makedirs(os.path.dirname(context_path), exist_ok=True)
+
         self.load_project(new_project.id)
         return new_project
     
@@ -47,3 +64,14 @@ class ProjectManager:
         else:
             self.active_epic = None
             raise ValueError(f"Épico com ID {epic_id} não encontrado ou não pertence ao projeto ativo.")
+        
+    
+    def get_all_projects(self) -> list[Project]:
+        return self.db_service.get_all_projects()
+    
+    def get_setting(self, key: str):
+        return self.db_service.get_setting(key)
+
+    def set_setting(self, key: str, value: str):
+        # TODO: colocar um try catch aqui pra pegar os erros
+        self.db_service.set_setting(key=key, value=value)
